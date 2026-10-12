@@ -1,0 +1,70 @@
+name: OneZae Automation Pipeline
+
+on:
+  push:
+    branches:
+      - main
+
+  pull_request:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+jobs:
+  automation-tests:
+    name: Playwright Cucumber Tests
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 30
+
+    env:
+      CI: true
+
+      BASE_URL: ${{ secrets.BASE_URL }}
+      QA_ADMIN_EMAIL: ${{ secrets.QA_ADMIN_EMAIL }}
+      QA_ADMIN_PASSWORD: ${{ secrets.QA_ADMIN_PASSWORD }}
+
+      BROWSER: ${{ vars.BROWSER }}
+      HEADLESS: ${{ vars.HEADLESS }}
+      SLOW_MO: ${{ vars.SLOW_MO }}
+      SCREENSHOT_PATH: ${{ vars.SCREENSHOT_PATH }}
+      VIDEO_PATH: ${{ vars.VIDEO_PATH }}
+      ADMIN_LANDING_PATH: ${{ vars.ADMIN_LANDING_PATH }}
+      LOGIN_NAVIGATION_TIMEOUT_MS: ${{ vars.LOGIN_NAVIGATION_TIMEOUT_MS }}
+
+    steps:
+
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Validate Cucumber configuration
+        run: npm run test:dry-run
+
+      - name: Run OneZae automation tests
+        run: npm test
+
+      - name: Upload automation artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: onezae-automation-report
+          path: |
+            reports/
+            test-results/
+            screenshots/
+            videos/
+          if-no-files-found: ignore
+          retention-days: 14
