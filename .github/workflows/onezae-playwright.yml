@@ -5,14 +5,16 @@ on:
     branches:
       - main
 
-  pull_request:
-    branches:
-      - main
-
   workflow_dispatch:
 
 permissions:
   contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "onezae-pages"
+  cancel-in-progress: false
 
 jobs:
   automation-tests:
@@ -20,16 +22,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
     env:
-      # CI flag
       CI: true
 
-      # GitHub Secrets
+      # Secrets
       BASE_URL: ${{ secrets.BASE_URL }}
       QA_ADMIN_EMAIL: ${{ secrets.QA_ADMIN_EMAIL }}
       QA_ADMIN_PASSWORD: ${{ secrets.QA_ADMIN_PASSWORD }}
 
-      # GitHub Variables
+      # Variables
       BROWSER: ${{ vars.BROWSER }}
       HEADLESS: ${{ vars.HEADLESS }}
       SLOW_MO: ${{ vars.SLOW_MO }}
@@ -41,13 +46,13 @@ jobs:
     steps:
 
       # -------------------------------------------------
-      # 1. Checkout source code
+      # 1. Checkout
       # -------------------------------------------------
       - name: Checkout source code
         uses: actions/checkout@v4
 
       # -------------------------------------------------
-      # 2. Setup Node.js
+      # 2. Node
       # -------------------------------------------------
       - name: Setup Node.js 22
         uses: actions/setup-node@v4
@@ -56,34 +61,32 @@ jobs:
           cache: npm
 
       # -------------------------------------------------
-      # 3. Install project dependencies
+      # 3. Dependencies
       # -------------------------------------------------
       - name: Install dependencies
         run: npm ci
 
       # -------------------------------------------------
-      # 4. Install Playwright browser
+      # 4. Playwright browser
       # -------------------------------------------------
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
 
       # -------------------------------------------------
-      # 5. Validate Cucumber configuration
+      # 5. Cucumber validation
       # -------------------------------------------------
       - name: Validate Cucumber configuration
         run: npm run test:dry-run
 
       # -------------------------------------------------
-      # 6. Check OneZae URL availability
-      # This will NOT fail the pipeline.
-      # It is only for debugging environment availability.
+      # 6. Check application availability
       # -------------------------------------------------
       - name: Check OneZae application availability
-        shell: bash
         continue-on-error: true
+        shell: bash
         run: |
           echo "=========================================="
-          echo "Checking OneZae application connectivity"
+          echo "Checking OneZae application"
           echo "=========================================="
 
           HTTP_STATUS=$(curl \
@@ -98,19 +101,16 @@ jobs:
           echo "HTTP Status: ${HTTP_STATUS}"
 
           if [ "${HTTP_STATUS}" = "000" ]; then
-            echo "OneZae application is unreachable."
+            echo "Application is unreachable."
           elif [ "${HTTP_STATUS}" -ge 200 ] && [ "${HTTP_STATUS}" -lt 400 ]; then
-            echo "OneZae application is reachable."
+            echo "Application is reachable."
           else
-            echo "OneZae application returned HTTP ${HTTP_STATUS}."
+            echo "Application returned HTTP ${HTTP_STATUS}."
           fi
 
       # -------------------------------------------------
-      # 7. Run Playwright + Cucumber automation
-      #
-      # continue-on-error is intentional.
-      # This allows reports to be generated/uploaded
-      # even when automation tests fail.
+      # 7. Run automation
+      # Keep going even if tests fail so report can publish
       # -------------------------------------------------
       - name: Run OneZae automation tests
         id: run-tests
@@ -119,9 +119,6 @@ jobs:
 
       # -------------------------------------------------
       # 8. Generate report
-      #
-      # Your package.json:
-      # "report": "node support/report.js"
       # -------------------------------------------------
       - name: Generate automation report
         if: always()
@@ -129,14 +126,89 @@ jobs:
         run: npm run report
 
       # -------------------------------------------------
-      # 9. Upload reports and failure evidence
+      # 9. Debug generated report files
       # -------------------------------------------------
-      - name: Upload automation report
-        id: upload-report
+      - name: Show generated report files
+        if: always()
+        shell: bash
+        run: |
+          echo "=========================================="
+          echo "Generated report files"
+          echo "=========================================="
+
+          if [ -d "reports" ]; then
+            find reports -maxdepth 6 -type f -print
+          else
+            echo "reports directory does not exist"
+          fi
+
+      # -------------------------------------------------
+      # 10. Prepare HTML report for GitHub Pages
+      # -------------------------------------------------
+      - name: Prepare HTML report site
+        if: always()
+        shell: bash
+        run: |
+          rm -rf _site
+          mkdir -p _site
+
+          echo "Searching for generated HTML report..."
+
+          REPORT_FILE=$(find reports -type f -name "index.html" 2>/dev/null | head -n 1)
+
+          if [ -z "$REPORT_FILE" ]; then
+            REPORT_FILE=$(find reports -type f -name "*.html" 2>/dev/null | head -n 1)
+          fi
+
+          if [ -n "$REPORT_FILE" ]; then
+
+            echo "HTML report found:"
+            echo "$REPORT_FILE"
+
+            REPORT_DIR=$(dirname "$REPORT_FILE")
+
+            echo "Copying report directory:"
+            echo "$REPORT_DIR"
+
+            cp -R "$REPORT_DIR"/. _site/
+
+            if [ ! -f "_site/index.html" ]; then
+              cp "$REPORT_FILE" "_site/index.html"
+            fi
+
+            echo ""
+            echo "Published files:"
+            find _site -maxdepth 4 -type f -print
+
+          else
+
+            echo "WARNING: No HTML report was generated."
+
+            cat > _site/index.html <<'EOF'
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="UTF-8">
+            <title>OneZae Automation Report</title>
+          </head>
+          <body>
+            <h1>OneZae Automation Report</h1>
+            <p>No HTML automation report was generated by the test framework.</p>
+            <p>Check the GitHub Actions logs for the Generate automation report step.</p>
+          </body>
+          </html>
+          EOF
+
+          fi
+
+      # -------------------------------------------------
+      # 11. Keep normal downloadable artifact as backup
+      # -------------------------------------------------
+      - name: Upload raw automation artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: onezae-automation-report-${{ github.run_number }}
+          name: onezae-automation-artifacts-${{ github.run_number }}
           path: |
             reports/
             test-results/
@@ -146,66 +218,80 @@ jobs:
           retention-days: 14
 
       # -------------------------------------------------
-      # 10. Print report information
+      # 12. Configure GitHub Pages
       # -------------------------------------------------
-      - name: Print automation report URL
+      - name: Configure GitHub Pages
+        if: always()
+        uses: actions/configure-pages@v5
+
+      # -------------------------------------------------
+      # 13. Upload HTML report to Pages
+      # -------------------------------------------------
+      - name: Upload HTML report to GitHub Pages
+        if: always()
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      # -------------------------------------------------
+      # 14. Deploy HTML report
+      # -------------------------------------------------
+      - name: Deploy HTML report
+        id: deployment
+        if: always()
+        uses: actions/deploy-pages@v4
+
+      # -------------------------------------------------
+      # 15. Print real browser URL
+      # -------------------------------------------------
+      - name: Print HTML report URL
         if: always()
         shell: bash
         run: |
           echo ""
           echo "=========================================="
-          echo "       OneZae Automation Report"
+          echo "      OneZae Automation HTML Report"
           echo "=========================================="
           echo ""
-          echo "Test Result : ${{ steps.run-tests.outcome }}"
-          echo "Report URL  : ${{ steps.upload-report.outputs.artifact-url }}"
-          echo "Run Number  : ${{ github.run_number }}"
-          echo "Branch      : ${{ github.ref_name }}"
-          echo "Commit      : ${{ github.sha }}"
+          echo "Test Result      : ${{ steps.run-tests.outcome }}"
+          echo "HTML Report URL  : ${{ steps.deployment.outputs.page_url }}"
+          echo "Run Number       : ${{ github.run_number }}"
+          echo "Branch           : ${{ github.ref_name }}"
           echo ""
           echo "=========================================="
 
-      # -------------------------------------------------
-      # 11. GitHub Actions Summary
-      # Gives a clickable report link in Summary screen
-      # -------------------------------------------------
-      - name: Publish pipeline summary
-        if: always()
-        shell: bash
-        run: |
           echo "# OneZae Automation Test Report" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
 
-          echo "## Execution Details" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Test Result" >> "$GITHUB_STEP_SUMMARY"
+          echo "**${{ steps.run-tests.outcome }}**" >> "$GITHUB_STEP_SUMMARY"
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          echo "### HTML Report" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          echo "🌐 [Open OneZae HTML Automation Report](${{ steps.deployment.outputs.page_url }})" >> "$GITHUB_STEP_SUMMARY"
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          echo "### Execution Details" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
 
           echo "| Item | Value |" >> "$GITHUB_STEP_SUMMARY"
           echo "|------|-------|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Test Result | **${{ steps.run-tests.outcome }}** |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Branch | \`${{ github.ref_name }}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Run Number | \`${{ github.run_number }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Run | \`${{ github.run_number }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Commit | \`${{ github.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
 
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "## Automation Report" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-
-          if [ -n "${{ steps.upload-report.outputs.artifact-url }}" ]; then
-            echo "📊 [Open / Download OneZae Automation Report](${{ steps.upload-report.outputs.artifact-url }})" >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "⚠️ Automation report artifact was not generated." >> "$GITHUB_STEP_SUMMARY"
-          fi
-
       # -------------------------------------------------
-      # 12. Preserve actual test result
-      #
-      # Reports are uploaded first.
-      # Then pipeline is marked failed if tests failed.
+      # 16. Preserve actual failure status
       # -------------------------------------------------
       - name: Mark pipeline failed when tests fail
         if: steps.run-tests.outcome == 'failure'
         shell: bash
         run: |
-          echo "OneZae automation tests failed."
-          echo "The test report and failure evidence have already been uploaded."
+          echo "Automation tests failed."
+          echo "HTML report has already been published."
+          echo "Report URL: ${{ steps.deployment.outputs.page_url }}"
           exit 1
