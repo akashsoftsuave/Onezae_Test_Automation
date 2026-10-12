@@ -11,20 +11,25 @@ on:
 
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   automation-tests:
     name: Playwright Cucumber Tests
     runs-on: ubuntu-latest
-
     timeout-minutes: 30
 
     env:
+      # CI flag
       CI: true
 
+      # GitHub Secrets
       BASE_URL: ${{ secrets.BASE_URL }}
       QA_ADMIN_EMAIL: ${{ secrets.QA_ADMIN_EMAIL }}
       QA_ADMIN_PASSWORD: ${{ secrets.QA_ADMIN_PASSWORD }}
 
+      # GitHub Variables
       BROWSER: ${{ vars.BROWSER }}
       HEADLESS: ${{ vars.HEADLESS }}
       SLOW_MO: ${{ vars.SLOW_MO }}
@@ -35,36 +40,172 @@ jobs:
 
     steps:
 
+      # -------------------------------------------------
+      # 1. Checkout source code
+      # -------------------------------------------------
       - name: Checkout source code
         uses: actions/checkout@v4
 
+      # -------------------------------------------------
+      # 2. Setup Node.js
+      # -------------------------------------------------
       - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
 
+      # -------------------------------------------------
+      # 3. Install project dependencies
+      # -------------------------------------------------
       - name: Install dependencies
         run: npm ci
 
+      # -------------------------------------------------
+      # 4. Install Playwright browser
+      # -------------------------------------------------
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
 
+      # -------------------------------------------------
+      # 5. Validate Cucumber configuration
+      # -------------------------------------------------
       - name: Validate Cucumber configuration
         run: npm run test:dry-run
 
+      # -------------------------------------------------
+      # 6. Check OneZae URL availability
+      # This will NOT fail the pipeline.
+      # It is only for debugging environment availability.
+      # -------------------------------------------------
+      - name: Check OneZae application availability
+        shell: bash
+        continue-on-error: true
+        run: |
+          echo "=========================================="
+          echo "Checking OneZae application connectivity"
+          echo "=========================================="
+
+          HTTP_STATUS=$(curl \
+            -L \
+            -s \
+            -o /dev/null \
+            -w "%{http_code}" \
+            --connect-timeout 10 \
+            --max-time 30 \
+            "${BASE_URL}/login" || echo "000")
+
+          echo "HTTP Status: ${HTTP_STATUS}"
+
+          if [ "${HTTP_STATUS}" = "000" ]; then
+            echo "OneZae application is unreachable."
+          elif [ "${HTTP_STATUS}" -ge 200 ] && [ "${HTTP_STATUS}" -lt 400 ]; then
+            echo "OneZae application is reachable."
+          else
+            echo "OneZae application returned HTTP ${HTTP_STATUS}."
+          fi
+
+      # -------------------------------------------------
+      # 7. Run Playwright + Cucumber automation
+      #
+      # continue-on-error is intentional.
+      # This allows reports to be generated/uploaded
+      # even when automation tests fail.
+      # -------------------------------------------------
       - name: Run OneZae automation tests
+        id: run-tests
+        continue-on-error: true
         run: npm test
 
-      - name: Upload automation artifacts
+      # -------------------------------------------------
+      # 8. Generate report
+      #
+      # Your package.json:
+      # "report": "node support/report.js"
+      # -------------------------------------------------
+      - name: Generate automation report
+        if: always()
+        continue-on-error: true
+        run: npm run report
+
+      # -------------------------------------------------
+      # 9. Upload reports and failure evidence
+      # -------------------------------------------------
+      - name: Upload automation report
+        id: upload-report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: onezae-automation-report
+          name: onezae-automation-report-${{ github.run_number }}
           path: |
             reports/
             test-results/
             screenshots/
             videos/
-          if-no-files-found: ignore
+          if-no-files-found: warn
           retention-days: 14
+
+      # -------------------------------------------------
+      # 10. Print report information
+      # -------------------------------------------------
+      - name: Print automation report URL
+        if: always()
+        shell: bash
+        run: |
+          echo ""
+          echo "=========================================="
+          echo "       OneZae Automation Report"
+          echo "=========================================="
+          echo ""
+          echo "Test Result : ${{ steps.run-tests.outcome }}"
+          echo "Report URL  : ${{ steps.upload-report.outputs.artifact-url }}"
+          echo "Run Number  : ${{ github.run_number }}"
+          echo "Branch      : ${{ github.ref_name }}"
+          echo "Commit      : ${{ github.sha }}"
+          echo ""
+          echo "=========================================="
+
+      # -------------------------------------------------
+      # 11. GitHub Actions Summary
+      # Gives a clickable report link in Summary screen
+      # -------------------------------------------------
+      - name: Publish pipeline summary
+        if: always()
+        shell: bash
+        run: |
+          echo "# OneZae Automation Test Report" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          echo "## Execution Details" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          echo "| Item | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Test Result | **${{ steps.run-tests.outcome }}** |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Branch | \`${{ github.ref_name }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Run Number | \`${{ github.run_number }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Commit | \`${{ github.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Automation Report" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ -n "${{ steps.upload-report.outputs.artifact-url }}" ]; then
+            echo "📊 [Open / Download OneZae Automation Report](${{ steps.upload-report.outputs.artifact-url }})" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "⚠️ Automation report artifact was not generated." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # -------------------------------------------------
+      # 12. Preserve actual test result
+      #
+      # Reports are uploaded first.
+      # Then pipeline is marked failed if tests failed.
+      # -------------------------------------------------
+      - name: Mark pipeline failed when tests fail
+        if: steps.run-tests.outcome == 'failure'
+        shell: bash
+        run: |
+          echo "OneZae automation tests failed."
+          echo "The test report and failure evidence have already been uploaded."
+          exit 1
