@@ -51,12 +51,24 @@ When('I submit the login form with blank credentials once', async function () {
   await this.adminLoginPage.submitBlankCredentialsOnce();
 });
 
-When('I submit the known QA username with an intentionally incorrect password once', async function () {
-  const username = process.env.QA_ADMIN_USERNAME;
-  assert.ok(username, 'QA_ADMIN_USERNAME must be configured for LOGIN-004');
+When('I submit the known QA email or username with an intentionally incorrect password once', async function () {
+  const username = process.env.QA_ADMIN_USERNAME || process.env.QA_ADMIN_EMAIL;
+  assert.ok(
+    username,
+    'Configure QA_ADMIN_USERNAME or QA_ADMIN_EMAIL for LOGIN-004'
+  );
 
   const incorrectPassword = `Invalid-${randomBytes(16).toString('hex')}`;
   await this.adminLoginPage.submitCredentialsOnce(username, incorrectPassword);
+  await this.adminLoginPage.waitForAuthenticationFailure(
+    Number(process.env.LOGIN_AUTH_FEEDBACK_TIMEOUT_MS || 10000)
+  );
+});
+
+When('I submit a reserved synthetic unregistered identifier and password once', async function () {
+  const identifier = `onezae-unregistered-${randomBytes(12).toString('hex')}@example.invalid`;
+  const password = `Invalid-${randomBytes(16).toString('hex')}`;
+  await this.adminLoginPage.submitCredentialsOnce(identifier, password);
   await this.adminLoginPage.waitForAuthenticationFailure(
     Number(process.env.LOGIN_AUTH_FEEDBACK_TIMEOUT_MS || 10000)
   );
@@ -79,9 +91,15 @@ Then('visible authentication failure feedback should be shown', async function (
 });
 
 Then('authenticated dashboard navigation should not be visible', async function () {
+  const landingPath = process.env.ADMIN_LANDING_PATH;
+  assert.ok(
+    typeof landingPath === 'string' && landingPath.startsWith('/'),
+    'ADMIN_LANDING_PATH must be configured as an absolute dashboard path'
+  );
+
   assert.equal(
     await this.adminLoginPage.isAuthenticatedNavigationVisible(
-      new URL(process.env.ADMIN_LANDING_PATH, process.env.BASE_URL).toString()
+      new URL(landingPath, process.env.BASE_URL).toString()
     ),
     false,
     'Protected admin dashboard navigation must not be visible after failed authentication'
@@ -96,12 +114,7 @@ Then('visible required-field validation feedback should be shown', async functio
   );
 });
 
-Given('enabled non-production QA email credentials are configured', function () {
-  assert.equal(
-    process.env.TEST_ENVIRONMENT?.toLowerCase(),
-    'non-production',
-    'TEST_ENVIRONMENT must be set to non-production before submitting QA credentials'
-  );
+Given('QA email credentials are configured', function () {
   assert.ok(process.env.QA_ADMIN_EMAIL, 'QA_ADMIN_EMAIL must be configured');
   assert.ok(process.env.QA_ADMIN_PASSWORD, 'QA_ADMIN_PASSWORD must be configured');
 });

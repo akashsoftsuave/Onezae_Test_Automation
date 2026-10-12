@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config({ quiet: true });
 
 const fs = require('node:fs/promises');
 const path = require('node:path');
@@ -65,6 +65,10 @@ function safeName(value) {
   return value.replace(/[^a-zA-Z0-9-_]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80) || 'scenario';
 }
 
+function isCredentialScenario(pickle) {
+  return pickle.tags.some((tag) => ['@LOGIN-003', '@LOGIN-004'].includes(tag.name));
+}
+
 BeforeAll(async function () {
   const browserName = (process.env.BROWSER || 'chromium').toLowerCase();
   const browserType = browsers[browserName];
@@ -90,12 +94,15 @@ BeforeAll(async function () {
 
 Before(async function ({ pickle }) {
   this.scenarioContext = new ScenarioContext();
-  const storesCredentialArtifacts = pickle.tags.some((tag) =>
-    ['@LOGIN-003', '@LOGIN-004'].includes(tag.name)
-  );
+  const storesCredentialArtifacts = isCredentialScenario(pickle);
+  if (!storesCredentialArtifacts) {
+    this.videoRecordingDirectory = await fs.mkdtemp(
+      path.join(artifacts.videos, '.recording-')
+    );
+  }
   this.context = await browser.newContext({
     ...(!storesCredentialArtifacts && {
-      recordVideo: { dir: artifacts.videos, size: { width: 1920, height: 1080 } }
+      recordVideo: { dir: this.videoRecordingDirectory, size: { width: 1920, height: 1080 } }
     })
   });
   this.page = await this.context.newPage();
@@ -103,29 +110,40 @@ Before(async function ({ pickle }) {
 });
 
 After(async function ({ pickle, result }) {
-  const video = this.page ? this.page.video() : undefined;
+  const isCredential = isCredentialScenario(pickle);
+  const failed = result?.status === Status.FAILED;
+  const video = !isCredential && this.page ? this.page.video() : undefined;
   const screenshotFile = path.join(
     artifacts.screenshots,
     `${safeName(pickle.name)}-${randomUUID()}.png`
   );
 
   try {
-    const storesCredentialArtifacts = pickle.tags.some((tag) =>
-      ['@LOGIN-003', '@LOGIN-004'].includes(tag.name)
-    );
-    if (!storesCredentialArtifacts && this.page && !this.page.isClosed()) {
+    if (failed && !isCredential && this.page && !this.page.isClosed()) {
       const screenshot = await this.page.screenshot({ path: screenshotFile, fullPage: true });
       await this.attach(screenshot, 'image/png');
     }
   } finally {
-    if (this.context) await this.context.close();
-  }
-
-  if (video) {
-    const videoFile = path.join(artifacts.videos, `${safeName(pickle.name)}-${randomUUID()}.webm`);
-    await video.saveAs(videoFile);
-    if (result?.status === Status.FAILED) {
-      await this.attach(`<a href="${pathToFileURL(videoFile).href}">Scenario video</a>`, 'text/html');
+    try {
+      if (this.context) await this.context.close();
+    } finally {
+      if (this.videoRecordingDirectory) {
+        try {
+          if (failed && video) {
+            const videoFile = path.join(
+              artifacts.videos,
+              `${safeName(pickle.name)}-${randomUUID()}.webm`
+            );
+            await video.saveAs(videoFile);
+            await this.attach(
+              `<a href="${pathToFileURL(videoFile).href}">Scenario video</a>`,
+              'text/html'
+            );
+          }
+        } finally {
+          await fs.rm(this.videoRecordingDirectory, { recursive: true, force: true });
+        }
+      }
     }
   }
 });

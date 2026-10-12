@@ -10,7 +10,7 @@
   "scripts": {
     "test": "node support/run-tests-with-report.js",
     "test:dry-run": "cucumber-js --dry-run",
-    "test:smoke": "node support/run-tests-with-report.js --tags @Smoke",
+    "test:tags": "node support/run-tests-with-report.js --tags ",
     "report": "node support/report.js",
     "test:report": "node support/run-tests-with-report.js"
   },

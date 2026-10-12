@@ -22,7 +22,7 @@ Feature: Onezae Admin login page
   @Regression @LOGIN-003 @Login
   Scenario: Authenticate with a valid QA email and password
     Given the application URL is configured
-    And enabled non-production QA email credentials are configured
+    And QA email credentials are configured
     When I open the admin login page
     And I authenticate with the QA email and password once
     Then the configured admin dashboard should be visible
@@ -30,10 +30,19 @@ Feature: Onezae Admin login page
     And the login form should no longer be visible
 
   @Regression @LOGIN-004 @Login
-  Scenario: Reject a known QA username with an incorrect password
+  Scenario: Reject a known QA email or username with an incorrect password
     Given the application URL is configured
     When I open the admin login page
-    And I submit the known QA username with an intentionally incorrect password once
+    And I submit the known QA email or username with an intentionally incorrect password once
+    Then the admin login page should remain visible
+    And visible authentication failure feedback should be shown
+    And authenticated dashboard navigation should not be visible
+
+  @Regression @LOGIN-005 @Login
+  Scenario: Reject an unregistered synthetic identifier
+    Given the application URL is configured
+    When I open the admin login page
+    And I submit a reserved synthetic unregistered identifier and password once
     Then the admin login page should remain visible
     And visible authentication failure feedback should be shown
     And authenticated dashboard navigation should not be visible

@@ -23,14 +23,18 @@ Set `BASE_URL` in `.env` to the application under test. Do not put credentials o
 ```powershell
 npm.cmd run test:dry-run
 npm.cmd run test:smoke
+npm.cmd run test:login
+npm.cmd run test:regression
+npm.cmd run test:supplemental
 npm.cmd test -- --tags "@LOGIN-001"
 npm.cmd test -- --tags "@LOGIN-002"
 npm.cmd test -- --tags "@LOGIN-003"
 npm.cmd test -- --tags "@LOGIN-004"
+npm.cmd test -- --tags "@LOGIN-005"
 npm.cmd test
 ```
 
-`test:dry-run` checks Cucumber wiring without launching the browser. Every runtime test command generates `reports/cucumber-report.json` and `reports/html-report/index.html` after the run, including when scenarios fail; the command still returns a nonzero exit code when tests fail. `npm.cmd run report` can regenerate the HTML report from the latest JSON output. Runtime tests require `BASE_URL`, installed browser binaries, and a reachable application. In PowerShell with a restricted execution policy, use the `.cmd` launchers as shown above.
+`test:smoke` runs `@LOGIN-001`; `test:login` and `test:regression` run scenarios tagged `@Login` and `@Regression`; `test:supplemental` runs `@SupplementalUsability`. All tag scripts use the same reporting runner. `test:dry-run` checks Cucumber wiring without launching the browser. Every runtime test command generates `reports/cucumber-report.json` and `reports/html-report/index.html` after the run, including when scenarios fail; the command still returns a nonzero exit code when tests fail. Failed non-credential scenarios save a screenshot under `screenshots/` and a video under `videos/`; passed scenarios' temporary recordings are removed. `LOGIN-003` and `LOGIN-004` do not save screenshots or videos to avoid persisting credential-bearing browser content. `npm.cmd run report` can regenerate the HTML report from the latest JSON output. Runtime tests require `BASE_URL`, installed browser binaries, and a reachable application. In PowerShell with a restricted execution policy, use the `.cmd` launchers as shown above.
 
 ## Configuration
 
@@ -42,16 +46,15 @@ npm.cmd test
 | `SLOW_MO` | `0` | Browser action delay in milliseconds |
 | `SCREENSHOT_PATH` | `screenshots` | Per-scenario screenshot output |
 | `VIDEO_PATH` | `videos` | Per-scenario video output |
-| `TEST_ENVIRONMENT` | unset | Must be `non-production` for successful credential-submission scenarios |
-| `QA_ADMIN_EMAIL` | unset | Enabled non-production QA account email used for login |
+| `QA_ADMIN_EMAIL` | unset | QA account email used for login |
 | `QA_ADMIN_PASSWORD` | unset | QA account password; keep outside source control |
-| `QA_ADMIN_USERNAME` | unset | Known QA account username used for negative login coverage |
+| `QA_ADMIN_USERNAME` | unset | Optional username override for negative login coverage; falls back to `QA_ADMIN_EMAIL` |
 | `ADMIN_LANDING_PATH` | unset | Expected post-login dashboard path, e.g. `/dashboard` |
 | `LOGIN_NAVIGATION_TIMEOUT_MS` | `15000` | Maximum post-login navigation wait |
 | `LOGIN_AUTH_FEEDBACK_TIMEOUT_MS` | `10000` | Maximum wait for visible authentication rejection feedback |
 
 Invalid browser names, boolean values, delays, and URL protocols fail explicitly.
-Put QA values only in an ignored local `.env` file or inject them through the CI secret store. Do not place secrets in source files or command-line arguments. `LOGIN-003` requires a valid enabled QA account and dashboard path. `LOGIN-004` submits one generated incorrect password for `QA_ADMIN_USERNAME`; schedule it only when the account's documented failed-login policy allows that attempt.
+Put QA values only in an ignored local `.env` file or inject them through the CI secret store. Do not place secrets in source files or command-line arguments. `LOGIN-003` requires a valid enabled QA account and dashboard path. `LOGIN-004` uses `QA_ADMIN_USERNAME` when set, otherwise `QA_ADMIN_EMAIL`, and submits one generated incorrect password; schedule it only when the account's documented failed-login policy allows that attempt.
 
 ## Architecture
 
@@ -68,12 +71,13 @@ support/ (browser/scenario lifecycle and report generation)
 - Page objects own locators and browser interactions.
 - `AdminLogin.feature` contains `LOGIN-001` for visible login controls and `LOGIN-002` for blank-credential validation at `/login`. `LOGIN-002` is supplemental usability coverage, not `A-1.1` acceptance-criterion coverage.
 - `LOGIN-002` asserts visible required-field feedback after one blank submission, including the app's inline email/password messages.
-- `LOGIN-003` covers `A-1.1`: it requires a non-production target and enabled QA email/password supplied through environment variables. It enters the email in the `Email/Username*` field, waits for the configured dashboard path, and checks authenticated navigation and that the login form is gone. This credential-bearing scenario does not save screenshots or video.
-- `LOGIN-004` submits the known QA username with a cryptographically generated incorrect password once, then verifies the login page and visible authentication failure feedback remain while the protected dashboard link is absent. It does not require a `TEST_ENVIRONMENT` variable or rate-limit counters. Schedule execution according to the documented account rate-limit policy. This credential-bearing scenario does not save screenshots or video.
+- `LOGIN-003` covers `A-1.1`: it requires a QA email/password and dashboard path supplied through environment variables. It enters the email in the `Email/Username*` field, waits for the configured dashboard path, and checks authenticated navigation and that the login form is gone. This credential-bearing scenario does not save screenshots or video.
+- `LOGIN-004` submits the configured QA email or optional username override with a cryptographically generated incorrect password once, then verifies the login page and visible authentication failure feedback remain while the protected dashboard link is absent. It does not require rate-limit counters. Schedule execution according to the documented account rate-limit policy. This credential-bearing scenario does not save screenshots or video.
+- `LOGIN-005` submits a unique synthetic identifier under the reserved `.invalid` domain with a generated synthetic password, then checks the login page and failure feedback remain while authenticated dashboard navigation is absent. It requires no real account data and can be run with `npm.cmd test -- --tags "@LOGIN-005"`.
 - Shared waits and action helpers live in `utils/`.
-- Hooks capture and attach screenshots and record videos; generated artifacts are ignored by Git.
+- Hooks capture and attach failure screenshots and videos for non-credential scenarios; generated artifacts are ignored by Git.
 - Cucumber emits JSON under `reports/`; `npm run report` creates the HTML report.
-- Features use case-sensitive tags: `LOGIN-001` is tagged `@Regression @LOGIN-001 @Login`; supplemental `LOGIN-002` is tagged `@SupplementalUsability @LOGIN-002`; `LOGIN-003` is tagged `@Regression @LOGIN-003 @Login`; negative `LOGIN-004` is tagged `@Regression @LOGIN-004 @Login`.
+- Features use case-sensitive tags: `LOGIN-001` is tagged `@Regression @LOGIN-001 @Login`; supplemental `LOGIN-002` is tagged `@SupplementalUsability @LOGIN-002`; `LOGIN-003`, `LOGIN-004`, and `LOGIN-005` each have `@Regression`, their matching case tag, and `@Login`.
 
 ## Reference-to-starter mapping
 
