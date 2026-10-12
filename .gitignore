@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Playwright authentication
+.auth/
+playwright/.auth/
+
+# Test outputs
+playwright-report/
+test-results/
+reports/
+screenshots/
+videos/
+
+# Logs
+*.log
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+
+# Local AI/tool configuration
+.claude/
+.github/skills/

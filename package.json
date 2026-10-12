@@ -1,0 +1,23 @@
+{
+  "name": "onezae-automation",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Reusable Playwright and Cucumber automation framework",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node support/run-tests-with-report.js",
+    "test:dry-run": "cucumber-js --dry-run",
+    "test:smoke": "node support/run-tests-with-report.js --tags @Smoke",
+    "report": "node support/report.js",
+    "test:report": "node support/run-tests-with-report.js"
+  },
+  "dependencies": {
+    "@cucumber/cucumber": "^12.5.0",
+    "@playwright/test": "^1.57.0",
+    "dotenv": "^17.2.3",
+    "multiple-cucumber-html-reporter": "^3.10.0"
+  }
+}
