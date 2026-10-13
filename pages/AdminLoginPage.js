@@ -7,6 +7,15 @@ class AdminLoginPage extends CommonPo {
     this.emailUsernameInput = page.getByLabel('Email/Username*', { exact: true });
     this.passwordInput = page.getByLabel('Password*', { exact: true });
     this.logInButton = page.getByRole('button', { name: 'Log In', exact: true });
+    this.developerTunnelWarning = page.getByText(
+      'You are about to connect to a developer tunnel at:',
+      { exact: true }
+    );
+    this.developerTunnelContinueButton = page.getByRole('button', {
+      name: 'Continue',
+      exact: true
+    });
+    this.visibleLinks = page.locator('a:visible');
     this.validationFeedback = page.locator(
       '[role="alert"]:visible, [aria-live="assertive"]:visible, [aria-live="polite"]:visible'
     );
@@ -22,18 +31,12 @@ class AdminLoginPage extends CommonPo {
     await this.navigateTo(loginUrl.toString());
 
     if (loginUrl.hostname.endsWith('.devtunnels.ms')) {
-      const warning = this.page.getByText(
-        'You are about to connect to a developer tunnel at:',
-        { exact: true }
-      );
-
-      if (await warning.isVisible()) {
-        const continueButton = this.page.getByRole('button', { name: 'Continue', exact: true });
-        if (!(await continueButton.isVisible())) {
+      if (await this.developerTunnelWarning.isVisible()) {
+        if (!(await this.developerTunnelContinueButton.isVisible())) {
           throw new Error('The Dev Tunnels warning is visible, but its Continue button is missing');
         }
 
-        await continueButton.click();
+        await this.developerTunnelContinueButton.click();
         await waitForAppReady(this.page);
       }
     }
@@ -77,6 +80,15 @@ class AdminLoginPage extends CommonPo {
     return landingUrl.toString();
   }
 
+  async reloadProtectedLandingPage(timeout) {
+    if (!Number.isSafeInteger(timeout) || timeout <= 0) {
+      throw new Error('LOGIN_NAVIGATION_TIMEOUT_MS must be a positive integer');
+    }
+
+    await this.page.reload({ waitUntil: 'domcontentloaded', timeout });
+    await waitForAppReady(this.page, timeout);
+  }
+
   async isLoginPageVisible() {
     const currentUrl = new URL(this.page.url());
     return currentUrl.pathname === '/login' && await this.logInButton.isVisible();
@@ -90,7 +102,7 @@ class AdminLoginPage extends CommonPo {
 
   async isAuthenticatedNavigationVisible(landingUrl) {
     const dashboardPath = new URL(landingUrl).pathname;
-    return this.page.locator('a:visible').evaluateAll((links, expectedPath) =>
+    return this.visibleLinks.evaluateAll((links, expectedPath) =>
       links.some((link) => {
         const destination = new URL(link.href, location.href);
         return destination.origin === location.origin && destination.pathname === expectedPath;

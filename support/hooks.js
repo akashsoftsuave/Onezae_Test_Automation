@@ -66,7 +66,9 @@ function safeName(value) {
 }
 
 function isCredentialScenario(pickle) {
-  return pickle.tags.some((tag) => ['@LOGIN-003', '@LOGIN-004'].includes(tag.name));
+  return pickle.tags.some((tag) =>
+    ['@LOGIN-003', '@LOGIN-004', '@LOGIN-006'].includes(tag.name)
+  );
 }
 
 BeforeAll(async function () {

@@ -131,6 +131,12 @@ When('I authenticate with the QA email and password once', async function () {
   this.scenarioContext.set('adminLandingUrl', landingUrl);
 });
 
+When('I reload the protected landing page once', async function () {
+  await this.adminLoginPage.reloadProtectedLandingPage(
+    Number(process.env.LOGIN_NAVIGATION_TIMEOUT_MS || 15000)
+  );
+});
+
 Then('the configured admin dashboard should be visible', async function () {
   assert.equal(
     await this.adminLoginPage.isAtLandingPage(this.scenarioContext.get('adminLandingUrl')),

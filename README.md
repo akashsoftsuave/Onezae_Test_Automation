@@ -1,121 +1,153 @@
 # Playwright + Cucumber Automation Framework
 
-A reusable JavaScript/CommonJS browser automation starter based on the framework architecture described in the supplied skill. It keeps Gherkin, step orchestration, page objects, reusable utilities, lifecycle hooks, and reporting in separate layers.
+A reusable browser automation framework built using **Playwright, Cucumber.js, and JavaScript (CommonJS)**. It follows the Page Object Model (POM) and Behaviour-Driven Development (BDD) approach.
 
-## Requirements
+## 1. Technology Stack
+
+- Node.js 22+
+- JavaScript (CommonJS)
+- Playwright
+- Cucumber.js
+- Gherkin
+- JSON and HTML reporting
+
+## 2. Prerequisites
 
 - Node.js 22 or newer
 - npm
-- A target application URL for runtime execution
+- Application URL
+- Valid QA credentials, if required
 
-## Setup
+## 3. Setup
 
 ```powershell
 npm.cmd install
-if (-not (Test-Path .env)) { Copy-Item .env.example .env }
+
+if (-not (Test-Path .env)) {
+    Copy-Item .env.example .env
+}
+
 npx.cmd playwright install chromium
 ```
 
-Set `BASE_URL` in `.env` to the application under test. Do not put credentials or tokens in source control. `.env` is ignored by Git.
+Configure the application URL and required QA credentials in `.env`.
 
-## Run
-
-```powershell
-npm.cmd run test:dry-run
-npm.cmd run test:smoke
-npm.cmd run test:login
-npm.cmd run test:regression
-npm.cmd run test:supplemental
-npm.cmd test -- --tags "@LOGIN-001"
-npm.cmd test -- --tags "@LOGIN-002"
-npm.cmd test -- --tags "@LOGIN-003"
-npm.cmd test -- --tags "@LOGIN-004"
-npm.cmd test -- --tags "@LOGIN-005"
-npm.cmd test
-```
-
-`test:smoke` runs `@LOGIN-001`; `test:login` and `test:regression` run scenarios tagged `@Login` and `@Regression`; `test:supplemental` runs `@SupplementalUsability`. All tag scripts use the same reporting runner. `test:dry-run` checks Cucumber wiring without launching the browser. Every runtime test command generates `reports/cucumber-report.json` and `reports/html-report/index.html` after the run, including when scenarios fail; the command still returns a nonzero exit code when tests fail. Failed non-credential scenarios save a screenshot under `screenshots/` and a video under `videos/`; passed scenarios' temporary recordings are removed. `LOGIN-003` and `LOGIN-004` do not save screenshots or videos to avoid persisting credential-bearing browser content. `npm.cmd run report` can regenerate the HTML report from the latest JSON output. Runtime tests require `BASE_URL`, installed browser binaries, and a reachable application. In PowerShell with a restricted execution policy, use the `.cmd` launchers as shown above.
-
-## Configuration
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `BASE_URL` | unset | HTTP(S) application URL |
-| `BROWSER` | `chromium` | `chromium`, `firefox`, or `webkit` |
-| `HEADLESS` | `true` | Run the browser headlessly |
-| `SLOW_MO` | `0` | Browser action delay in milliseconds |
-| `SCREENSHOT_PATH` | `screenshots` | Per-scenario screenshot output |
-| `VIDEO_PATH` | `videos` | Per-scenario video output |
-| `QA_ADMIN_EMAIL` | unset | QA account email used for login |
-| `QA_ADMIN_PASSWORD` | unset | QA account password; keep outside source control |
-| `QA_ADMIN_USERNAME` | unset | Optional username override for negative login coverage; falls back to `QA_ADMIN_EMAIL` |
-| `ADMIN_LANDING_PATH` | unset | Expected post-login dashboard path, e.g. `/dashboard` |
-| `LOGIN_NAVIGATION_TIMEOUT_MS` | `15000` | Maximum post-login navigation wait |
-| `LOGIN_AUTH_FEEDBACK_TIMEOUT_MS` | `10000` | Maximum wait for visible authentication rejection feedback |
-
-Invalid browser names, boolean values, delays, and URL protocols fail explicitly.
-Put QA values only in an ignored local `.env` file or inject them through the CI secret store. Do not place secrets in source files or command-line arguments. `LOGIN-003` requires a valid enabled QA account and dashboard path. `LOGIN-004` uses `QA_ADMIN_USERNAME` when set, otherwise `QA_ADMIN_EMAIL`, and submits one generated incorrect password; schedule it only when the account's documented failed-login policy allows that attempt.
-
-## Architecture
+## 4. Project Structure
 
 ```text
 features/
-  -> step_definitions/
-    -> pages/
-      -> utils/ (waits, actions, scenario data)
-        -> application under test
-support/ (browser/scenario lifecycle and report generation)
-```
-
-- Each scenario gets a fresh browser context, page, and `ScenarioContext`.
-- Page objects own locators and browser interactions.
-- `AdminLogin.feature` contains `LOGIN-001` for visible login controls and `LOGIN-002` for blank-credential validation at `/login`. `LOGIN-002` is supplemental usability coverage, not `A-1.1` acceptance-criterion coverage.
-- `LOGIN-002` asserts visible required-field feedback after one blank submission, including the app's inline email/password messages.
-- `LOGIN-003` covers `A-1.1`: it requires a QA email/password and dashboard path supplied through environment variables. It enters the email in the `Email/Username*` field, waits for the configured dashboard path, and checks authenticated navigation and that the login form is gone. This credential-bearing scenario does not save screenshots or video.
-- `LOGIN-004` submits the configured QA email or optional username override with a cryptographically generated incorrect password once, then verifies the login page and visible authentication failure feedback remain while the protected dashboard link is absent. It does not require rate-limit counters. Schedule execution according to the documented account rate-limit policy. This credential-bearing scenario does not save screenshots or video.
-- `LOGIN-005` submits a unique synthetic identifier under the reserved `.invalid` domain with a generated synthetic password, then checks the login page and failure feedback remain while authenticated dashboard navigation is absent. It requires no real account data and can be run with `npm.cmd test -- --tags "@LOGIN-005"`.
-- Shared waits and action helpers live in `utils/`.
-- Hooks capture and attach failure screenshots and videos for non-credential scenarios; generated artifacts are ignored by Git.
-- Cucumber emits JSON under `reports/`; `npm run report` creates the HTML report.
-- Features use case-sensitive tags: `LOGIN-001` is tagged `@Regression @LOGIN-001 @Login`; supplemental `LOGIN-002` is tagged `@SupplementalUsability @LOGIN-002`; `LOGIN-003`, `LOGIN-004`, and `LOGIN-005` each have `@Regression`, their matching case tag, and `@Login`.
-
-## Reference-to-starter mapping
-
-| Audited reference component | Starter component | Action |
-| --- | --- | --- |
-| Cucumber configuration and Feature → Step → Page layering | `cucumber.js`, `features/`, `step_definitions/`, `pages/` | Adapt |
-| Scenario lifecycle and browser isolation | `support/hooks.js` | Adapt |
-| Shared page and action patterns | `pages/CommonPo.js`, `utils/actions.js` | Adapt |
-| Waiter utilities | `utils/Waiter.js` | Adapt |
-| Scenario-scoped state and generated data | `utils/scenarioContext.js`, `utils/DataGenerator.js` | Adapt |
-| JSON-to-HTML reporting and evidence handling | `support/report.js`, hooks, `reports/`, `screenshots/`, `videos/` | Adapt |
-| Domain pages, selectors, workflows, API helpers, and seed data | Not included | Replace/Create when application scope is known |
-| CI pipeline | Not included | Create if required by the target repository |
-
-## Project structure
-
-```text
-features/
-  AdminLogin.feature
 pages/
-  AdminLoginPage.js
-  CommonPo.js
-reports/
-  .gitkeep
-screenshots/
-  .gitkeep
 step_definitions/
-  AdminLogin.steps.js
 support/
-  hooks.js
-  report.js
 utils/
-  actions.js
-  DataGenerator.js
-  scenarioContext.js
-  Waiter.js
+reports/
+screenshots/
 videos/
-  .gitkeep
 cucumber.js
 package.json
+.env.example
+README.md
 ```
+
+### Folder Overview
+
+| Folder/File | Purpose |
+|---|---|
+| `features/` | Gherkin feature files |
+| `step_definitions/` | Step implementations |
+| `pages/` | Page Object Model classes |
+| `support/` | Hooks and reporting |
+| `utils/` | Reusable actions, waits, and test data |
+| `reports/` | JSON and HTML reports |
+| `screenshots/` | Failure screenshots |
+| `videos/` | Failure recordings |
+| `cucumber.js` | Cucumber configuration |
+| `package.json` | Dependencies and test scripts |
+| `.env.example` | Environment configuration template |
+
+## 5. Framework Architecture
+
+The framework follows this execution flow:
+
+`Feature Files → Step Definitions → Page Objects → Utilities → Application`
+
+Each scenario uses an isolated browser context and scenario-specific data.
+
+## 6. Test Execution
+
+| Command | Purpose |
+|---|---|
+| `npm.cmd run test:dry-run` | Validate Cucumber configuration |
+| `npm.cmd run test:smoke` | Run smoke tests |
+| `npm.cmd run test:login` | Run login tests |
+| `npm.cmd run test:regression` | Run regression tests |
+| `npm.cmd run test:supplemental` | Run supplemental usability tests |
+| `npm.cmd test -- --tags "@LOGIN-001"` | Run a specific tagged scenario |
+| `npm.cmd test` | Run the default test suite |
+| `npm.cmd run report` | Generate the HTML report |
+
+## 7. Automation Coverage
+
+### Admin Panel
+
+| Module | Coverage |
+|---|---|
+| Login | Login controls, blank-field validation, successful and unsuccessful login, session continuity |
+
+### Future Module Coverage
+
+Add each module here when its automation is implemented.
+
+| Module | Coverage | Status |
+|---|---|---|
+| Dashboard | To be updated | Not Started |
+| User Management | To be updated | Not Started |
+| Outlet Management | To be updated | Not Started |
+| Order Management | To be updated | Not Started |
+| Marketing | To be updated | Not Started |
+| Operations | To be updated | Not Started |
+| Content Settings | To be updated | Not Started |
+
+*The modules above are placeholders for planned coverage, not a claim that automation has been implemented.*
+
+## 8. Reports and Evidence
+
+Runtime test execution generates:
+
+- Cucumber JSON report: `reports/cucumber-report.json`
+- HTML report: `reports/html-report/index.html`
+- Failure screenshots: `screenshots/`
+- Failure videos: `videos/`
+
+Credential-bearing scenarios are excluded from screenshot and video persistence.
+
+## 9. Configuration
+
+Configure the following variables in `.env` as required:
+
+- `BASE_URL`
+- `BROWSER`
+- `HEADLESS`
+- `SLOW_MO`
+- `QA_ADMIN_EMAIL`
+- `QA_ADMIN_PASSWORD`
+- `ADMIN_LANDING_PATH`
+
+See `.env.example` for the available configuration options.
+
+## 10. Best Practices
+
+- Follow the Page Object Model.
+- Keep credentials outside source control.
+- Use reusable utilities and isolated test scenarios.
+- Organize tests using meaningful Cucumber tags.
+- Update the automation coverage table whenever a new module is implemented.
+- Maintain test reports and regression coverage as the application evolves.
+
+## 11. Future Enhancements
+
+- Expand automation across application modules.
+- Add API automation where required.
+- Integrate the framework with CI/CD pipelines.
+- Extend regression coverage as new features are implemented.
+

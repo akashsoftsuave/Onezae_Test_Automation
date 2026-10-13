@@ -47,4 +47,15 @@ Feature: Onezae Admin login page
     And visible authentication failure feedback should be shown
     And authenticated dashboard navigation should not be visible
 
+  @Regression @LOGIN-006 @Login
+  Scenario: Authenticated session remains usable after a landing page refresh
+    Given the application URL is configured
+    And QA email credentials are configured
+    When I open the admin login page
+    And I authenticate with the QA email and password once
+    And I reload the protected landing page once
+    Then the configured admin dashboard should be visible
+    And authenticated navigation should be visible
+    And the login form should no longer be visible
+
   
